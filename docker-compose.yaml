@@ -1,0 +1,86 @@
+version: '3.8'
+services:
+
+  zipkin:
+    image: openzipkin/zipkin
+    container_name: zipkin
+    environment:
+      - STORAGE_TYPE=mem
+    ports:
+      - "9411:9411"
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "5775:5775/udp"
+      - "6831:6831/udp"
+      - "6832:6832/udp"
+      - "5778:5778"
+      - "16686:16686"
+      - "14268:14268"
+
+  bookmarks-db:
+    image: postgres:12.3
+    environment:
+      - POSTGRES_USER=siva
+      - POSTGRES_PASSWORD=secret
+      - POSTGRES_DB=appdb
+    ports:
+      - "5433:5432"
+
+  votes-db:
+    image: postgres:12.3
+    environment:
+      - POSTGRES_USER=siva
+      - POSTGRES_PASSWORD=secret
+      - POSTGRES_DB=appdb
+    ports:
+      - "5434:5432"
+
+  bookmarks-service:
+    build:
+      context: ./bookmarks-service
+      dockerfile: ./src/main/docker/Dockerfile.jvm
+    ports:
+      - "18081:8081"
+    restart: always
+    depends_on:
+      - bookmarks-db
+    environment:
+      QUARKUS_PROFILE: docker
+      QUARKUS_DATASOURCE_JDBC_DRIVER: org.postgresql.Driver
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://bookmarks-db:5432/appdb
+      QUARKUS_DATASOURCE_USERNAME: siva
+      QUARKUS_DATASOURCE_PASSWORD: secret
+      QUARKUS_REST_CLIENT_VOTES_API_URL: http://votes-service:8082
+      QUARKUS_JAEGER_ENDPOINT: http://jaeger:14268/api/traces
+
+  votes-service:
+    build:
+      context: ./votes-service
+      dockerfile: ./src/main/docker/Dockerfile.jvm
+    ports:
+      - "18082:8082"
+    restart: always
+    depends_on:
+      - votes-db
+    environment:
+      QUARKUS_PROFILE: docker
+      QUARKUS_DATASOURCE_JDBC_DRIVER: org.postgresql.Driver
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://votes-db:5432/appdb
+      QUARKUS_DATASOURCE_USERNAME: siva
+      QUARKUS_DATASOURCE_PASSWORD: secret
+      QUARKUS_JAEGER_ENDPOINT: http://jaeger:14268/api/traces
+
+  bookmarks-ui:
+    build:
+      context: ./bookmarks-ui
+      dockerfile: ./src/main/docker/Dockerfile.jvm
+    ports:
+      - "18080:8080"
+    restart: always
+    depends_on:
+      - votes-service
+      - bookmarks-service
+    environment:
+      QUARKUS_PROFILE: docker
